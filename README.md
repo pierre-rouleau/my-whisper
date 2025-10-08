@@ -16,7 +16,10 @@ A simple Emacs package that provides speech-to-text functionality using Whisper.
 
 ## Features
 
-- Record audio with a simple key binding (`C-c v`)
+- Record audio with simple key bindings
+- Two transcription modes:
+  - **Fast mode** (`C-c n`): Uses base.en model for quick transcription
+  - **Accurate mode** (`C-c v`): Uses medium.en model for more accurate results
 - Automatic transcription using Whisper.cpp
 - Text insertion at cursor position
 - Non-blocking recording with user-controlled stop
@@ -54,13 +57,18 @@ cd whisper.cpp
 # Build the project
 make
 
-# Download a model (base.en is recommended for English)
+# Download models
+# For fast mode (required)
 bash ./models/download-ggml-model.sh base.en
+
+# For accurate mode (required)
+bash ./models/download-ggml-model.sh medium.en
 ```
 
 Make sure the paths in the code match your installation:
 - Whisper binary: `~/whisper.cpp/build/bin/whisper-cli`
-- Model file: `~/whisper.cpp/models/ggml-base.en.bin`
+- Fast mode model: `~/whisper.cpp/models/ggml-base.en.bin`
+- Accurate mode model: `~/whisper.cpp/models/ggml-medium.en.bin`
 
 If you install Whisper.cpp in a different location, you'll need to update the paths in `my-whisper.el`.
 
@@ -102,20 +110,28 @@ If you use `use-package`, add this to your `init.el`:
 ```elisp
 (use-package my-whisper
   :load-path "~/.emacs.d/my-whisper"
-  :bind ("C-c v" . run-whisper-stt))
+  :bind (("C-c v" . run-whisper-stt)
+         ("C-c n" . run-whisper-stt-fast)))
 ```
 
 ## Usage
 
-1. **Start recording**: Press `C-c v` to begin recording audio
+### Key Bindings
+
+- **`C-c n`**: Fast mode (base.en model) - quicker transcription, suitable for most use cases
+- **`C-c v`**: Accurate mode (medium.en model) - slower but more accurate transcription
+
+### Basic Workflow
+
+1. **Start recording**: Press `C-c n` (fast) or `C-c v` (accurate) to begin recording audio
 2. **Stop recording**: Press `C-g` to stop recording and start transcription
 3. **Get results**: The transcribed text will be automatically inserted at your cursor position
 
-### Example Workflow
+### Example
 
 1. Open any text buffer in Emacs
 2. Position your cursor where you want the transcribed text
-3. Press `C-c v`
+3. Press `C-c n` for fast transcription or `C-c v` for accurate transcription
 4. Speak into your microphone
 5. Press `C-g` when finished speaking
 6. Wait a moment for transcription to complete
@@ -123,13 +139,23 @@ If you use `use-package`, add this to your `init.el`:
 
 ## Configuration
 
-### Custom Key Binding
+### Custom Key Bindings
 
-To change the key binding, modify your `init.el`:
+To change the key bindings, modify your `init.el`:
 
 ```elisp
-;; Use a different key binding
-(global-set-key (kbd "C-c s") 'run-whisper-stt)  ; Instead of C-c v
+;; Use different key bindings
+(global-set-key (kbd "C-c s") 'run-whisper-stt-fast)  ; Fast mode
+(global-set-key (kbd "C-c S") 'run-whisper-stt)       ; Accurate mode
+```
+
+### Custom Model Path
+
+To use a different model for accurate mode, set the `whisper-model-path` variable in your `init.el`:
+
+```elisp
+;; Use a different model (e.g., large model for even better accuracy)
+(setq whisper-model-path "~/whisper.cpp/models/ggml-large.en.bin")
 ```
 
 ### Custom Paths
@@ -138,7 +164,7 @@ If your Whisper.cpp installation is in a different location, you'll need to modi
 
 ```elisp
 ;; Example: if whisper-cli is in /usr/local/bin/
-;; Edit the format string in my-whisper.el from:
+;; Edit the format strings in my-whisper.el from:
 ;; "~/whisper.cpp/build/bin/whisper-cli -m ~/whisper.cpp/models/ggml-base.en.bin ..."
 ;; to:
 ;; "/usr/local/bin/whisper-cli -m /path/to/your/model.bin ..."
@@ -160,7 +186,9 @@ If your Whisper.cpp installation is in a different location, you'll need to modi
    - Test sox manually: `sox -d -r 16000 -c 1 -b 16 test.wav`
 
 4. **Transcription not working**
-   - Verify the model file exists at `~/whisper.cpp/models/ggml-base.en.bin`
+   - Verify the model files exist:
+     - Fast mode: `~/whisper.cpp/models/ggml-base.en.bin`
+     - Accurate mode: `~/whisper.cpp/models/ggml-medium.en.bin`
    - Test whisper-cli manually with a wav file
 
 ### Testing the Setup
@@ -171,8 +199,11 @@ Test each component individually:
 # Test sox recording (record 5 seconds)
 sox -d -r 16000 -c 1 -b 16 test.wav trim 0 5
 
-# Test whisper transcription
+# Test whisper transcription (fast mode)
 ~/whisper.cpp/build/bin/whisper-cli -m ~/whisper.cpp/models/ggml-base.en.bin -f test.wav
+
+# Test whisper transcription (accurate mode)
+~/whisper.cpp/build/bin/whisper-cli -m ~/whisper.cpp/models/ggml-medium.en.bin -f test.wav
 ```
 
 ## How It Works
