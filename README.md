@@ -89,6 +89,10 @@ If you install Whisper.cpp in a different location, you'll need to update the pa
 
    ;; Load the package
    (require 'my-whisper)
+
+   ;; Set up keybindings
+   (global-set-key (kbd "C-c v") #'my-whisper-transcribe-fast)
+   (global-set-key (kbd "C-c n") #'my-whisper-transcribe)
    ```
 
 ### Option 2: Direct File Installation
@@ -102,6 +106,10 @@ If you install Whisper.cpp in a different location, you'll need to update the pa
    ```elisp
    ;; Load the whisper package
    (load-file "~/.emacs.d/my-whisper.el")
+
+   ;; Set up keybindings
+   (global-set-key (kbd "C-c v") #'my-whisper-transcribe-fast)
+   (global-set-key (kbd "C-c n") #'my-whisper-transcribe)
    ```
 
 ### Option 3: Using use-package
@@ -119,12 +127,14 @@ If you use `use-package`, add this to your `init.el`:
 
 ### Key Bindings
 
-- **`C-c n`**: Fast mode (base.en model) - quicker transcription, suitable for most use cases
-- **`C-c v`**: Accurate mode (medium.en model) - slower but more accurate transcription
+After setting up the keybindings as shown in the installation instructions:
+
+- **`C-c v`**: Fast mode (base.en model) - quicker transcription, suitable for most use cases
+- **`C-c n`**: Accurate mode (medium.en model) - slower but more accurate transcription
 
 ### Basic Workflow
 
-1. **Start recording**: Press `C-c n` (fast) or `C-c v` (accurate) to begin recording audio
+1. **Start recording**: Press `C-c v` (fast) or `C-c n` (accurate) to begin recording audio
 2. **Stop recording**: Press `C-g` to stop recording and start transcription
 3. **Get results**: The transcribed text will be automatically inserted at your cursor position
 
@@ -132,7 +142,7 @@ If you use `use-package`, add this to your `init.el`:
 
 1. Open any text buffer in Emacs
 2. Position your cursor where you want the transcribed text
-3. Press `C-c n` for fast transcription or `C-c v` for accurate transcription
+3. Press `C-c v` for fast transcription or `C-c n` for accurate transcription
 4. Speak into your microphone
 5. Press `C-g` when finished speaking
 6. Wait a moment for transcription to complete
