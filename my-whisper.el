@@ -127,16 +127,16 @@ and inserts the text at point."
          (vocab-word-count (my-whisper--check-vocabulary-length)))
 
     ;; Start recording audio
-    (let ((recording-proc (start-process "record-audio" nil "/bin/sh" "-c"
-                                         (format "sox -d -r 16000 -c 1 -b 16 %s --no-show-progress 2>/dev/null" wav-file))))
-      ;; Inform user recording has started with vocabulary warning if needed
-      (if (and vocab-word-count (> vocab-word-count 150))
-          (message "Recording started (fast mode). Press C-g to stop. WARNING: Vocabulary file has %d words (max: 150)!" vocab-word-count)
-        (message "Recording started (fast mode). Press C-g to stop."))
-      ;; Wait for user to stop (C-g)
-      (condition-case nil
-          (while t (sit-for 1))
-        (quit (kill-process recording-proc))))
+    (start-process "record-audio" nil "/bin/sh" "-c"
+                   (format "sox -d -r 16000 -c 1 -b 16 %s --no-show-progress 2>/dev/null" wav-file))
+    ;; Inform user recording has started with vocabulary warning if needed
+    (if (and vocab-word-count (> vocab-word-count 150))
+        (message "Recording started (fast mode). Press C-g to stop. WARNING: Vocabulary file has %d words (max: 150)!" vocab-word-count)
+      (message "Recording started (fast mode). Press C-g to stop."))
+    ;; Wait for user to stop (C-g)
+    (condition-case nil
+        (while t (sit-for 1))
+      (quit (interrupt-process "record-audio")))
 
     ;; Give sox time to finalize the file
     (sleep-for 0.5)
@@ -190,16 +190,16 @@ text at point."
          (vocab-word-count (my-whisper--check-vocabulary-length)))
 
     ;; Start recording audio
-    (let ((recording-proc (start-process "record-audio" nil "/bin/sh" "-c"
-                                         (format "sox -d -r 16000 -c 1 -b 16 %s --no-show-progress 2>/dev/null" wav-file))))
-      ;; Inform user recording has started with vocabulary warning if needed
-      (if (and vocab-word-count (> vocab-word-count 150))
-          (message "Recording started (accurate mode). Press C-g to stop. WARNING: Vocabulary file has %d words (max: 150)!" vocab-word-count)
-        (message "Recording started (accurate mode). Press C-g to stop."))
-      ;; Wait for user to stop (C-g)
-      (condition-case nil
-          (while t (sit-for 1))
-        (quit (kill-process recording-proc))))
+    (start-process "record-audio" nil "/bin/sh" "-c"
+                   (format "sox -d -r 16000 -c 1 -b 16 %s --no-show-progress 2>/dev/null" wav-file))
+    ;; Inform user recording has started with vocabulary warning if needed
+    (if (and vocab-word-count (> vocab-word-count 150))
+        (message "Recording started (accurate mode). Press C-g to stop. WARNING: Vocabulary file has %d words (max: 150)!" vocab-word-count)
+      (message "Recording started (accurate mode). Press C-g to stop."))
+    ;; Wait for user to stop (C-g)
+    (condition-case nil
+        (while t (sit-for 1))
+      (quit (interrupt-process "record-audio")))
 
     ;; Give sox time to finalize the file
     (sleep-for 0.5)
