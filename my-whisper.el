@@ -138,8 +138,17 @@ and inserts the text at point."
         (while t (sit-for 1))
       (quit (interrupt-process "record-audio")))
 
-    ;; Run Whisper STT with base.en model
-    (let* (
+    ;; Give sox time to finalize the file
+    (sleep-for 0.5)
+
+    ;; Check if recording file was created
+    (if (not (file-exists-p wav-file))
+        (progn
+          (message "Whisper: Recording file not created. Check your audio setup.")
+          (kill-buffer temp-buf))
+
+      ;; Run Whisper STT with base.en model
+      (let* (
            (whisper-cmd (if vocab-prompt
                             (format "%s -m %s -f %s -nt -np --prompt \"%s\" 2>/dev/null"
                                     my-whisper-whisper-cli-path
@@ -155,20 +164,17 @@ and inserts the text at point."
       (set-process-sentinel
        proc
        `(lambda (proc event)
-          (if (string= event "finished\n")
-              (when (buffer-live-p ,temp-buf)
-                (let* ((output (string-trim (with-current-buffer ,temp-buf (buffer-string)))))
-                  (if (string-empty-p output)
-                      (message "Whisper: No transcription output.")
-                    (when (buffer-live-p ,original-buf)
-                      (with-current-buffer ,original-buf
-                        (goto-char ,original-point)
-                        (insert output " ")
-                        (goto-char (point))))))
-                (kill-buffer ,temp-buf)
-                (when (file-exists-p ,wav-file)
-                  (delete-file ,wav-file)))
-            (message "Whisper process error: %s" event)))))))
+          (when (string= event "finished\n")
+            (when (buffer-live-p ,temp-buf)
+              (let* ((output (string-trim (with-current-buffer ,temp-buf (buffer-string)))))
+                (when (buffer-live-p ,original-buf)
+                  (with-current-buffer ,original-buf
+                    (goto-char ,original-point)
+                    (insert output " ")
+                    (goto-char (point)))))
+              (kill-buffer ,temp-buf)
+              (when (file-exists-p ,wav-file)
+                (delete-file ,wav-file))))))))))
 
 (defun my-whisper-transcribe ()
   "Record audio and transcribe using configurable Whisper model (accurate).
@@ -195,8 +201,17 @@ text at point."
         (while t (sit-for 1))
       (quit (interrupt-process "record-audio")))
 
-    ;; Run Whisper STT
-    (let* (
+    ;; Give sox time to finalize the file
+    (sleep-for 0.5)
+
+    ;; Check if recording file was created
+    (if (not (file-exists-p wav-file))
+        (progn
+          (message "Whisper: Recording file not created. Check your audio setup.")
+          (kill-buffer temp-buf))
+
+      ;; Run Whisper STT
+      (let* (
            (whisper-cmd (if vocab-prompt
                             (format "%s -m %s -f %s -nt -np --prompt \"%s\" 2>/dev/null"
                                     my-whisper-whisper-cli-path
@@ -212,20 +227,17 @@ text at point."
       (set-process-sentinel
        proc
        `(lambda (proc event)
-          (if (string= event "finished\n")
-              (when (buffer-live-p ,temp-buf)
-                (let* ((output (string-trim (with-current-buffer ,temp-buf (buffer-string)))))
-                  (if (string-empty-p output)
-                      (message "Whisper: No transcription output.")
-                    (when (buffer-live-p ,original-buf)
-                      (with-current-buffer ,original-buf
-                        (goto-char ,original-point)
-                        (insert output " ")
-                        (goto-char (point))))))
-                (kill-buffer ,temp-buf)
-                (when (file-exists-p ,wav-file)
-                  (delete-file ,wav-file)))
-            (message "Whisper process error: %s" event)))))))
+          (when (string= event "finished\n")
+            (when (buffer-live-p ,temp-buf)
+              (let* ((output (string-trim (with-current-buffer ,temp-buf (buffer-string)))))
+                (when (buffer-live-p ,original-buf)
+                  (with-current-buffer ,original-buf
+                    (goto-char ,original-point)
+                    (insert output " ")
+                    (goto-char (point)))))
+              (kill-buffer ,temp-buf)
+              (when (file-exists-p ,wav-file)
+                (delete-file ,wav-file))))))))))
 
 (provide 'my-whisper)
 ;;; my-whisper.el ends here
