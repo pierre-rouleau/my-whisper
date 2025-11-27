@@ -138,6 +138,8 @@ Returns nil if file doesn't exist or is empty."
   "Validate current settings.  Issue a user error if something is wrong."
   (let ((cli-path (my-whisper--cli-path))
         (model-path (my-whisper--model-path)))
+    (unless (executable-find "sox")
+      (user-error "The sox command is not accessible in your PATH."))
     (unless (file-directory-p my-whisper-homedir)
       (user-error "Invalid my-whisper-homedir (%s)" my-whisper-homedir))
     (unless (file-executable-p cli-path)
@@ -150,21 +152,42 @@ Returns nil if file doesn't exist or is empty."
                   model-path))))
 
 (defun my-whisper--start-message (fast-mode-p vocab-word-count)
-  "Inform user recording started and warn if vocabulary is too large."
+  "Inform user recording is starting and warn if vocabulary is too large.
+A FAST-MODE-P non-nil indicate fast mode, otherwise it indicate accurate mode.
+The VOCAB-WORD-COUNT is the number of words detected in the vocabulary file."
   (if (and vocab-word-count (> vocab-word-count 150))
-        (message "\
-Recording started (%s mode). Press C-g to stop.
+      (message "\
+Recording is starting (%s mode). Editing halted. Press C-g to stop.
 WARNING: Vocabulary file has %d words (max: 150)!"
-                 (if fast-mode-p "fast" "accurate")
-                 vocab-word-count)
-      (message "Recording started (%s mode). Press C-g to stop."
-               (if fast-mode-p "fast" "accurate"))))
+               (if fast-mode-p "fast" "accurate")
+               vocab-word-count)
+    (message "\
+Recording is starting (%s mode). Editing halted. Press C-g to stop."
+             (if fast-mode-p "fast" "accurate"))))
+
+(defun my-whisper-record-audio-in (wav-file)
+  "Record audio, store it in the specified WAV-FILE."
+  ;; Start recording audio.
+  ;; Use the sox command. Ref: https://sourceforge.net/projects/sox/
+  ;;  -d : record audio
+  ;;  -r sample-rate in Hz
+  ;;  -c channel : number of channel audio in the file.  Use 1.
+  ;;  -b bits: bit-length of each encoded sample.
+  ;;  --no-show-progress : do not print a progress bar in stdout.
+  (start-process "record-audio" nil "sox"
+                 "-d" "-r" " 16000" "-c" "1" "-b" "16"
+                 wav-file
+                 "--no-show-progress")
+    ;; Wait for user to stop (C-g)
+    (condition-case nil
+        (while t (sit-for 1))
+      (quit (interrupt-process "record-audio"))))
 
 (defun my-whisper-transcribe (&optional fast-mode-p)
   "Record audio and transcribe text in current buffer.
-By default, or when FAST-MODEL-P is nil, use the model selected by
+By default, or when FAST-MODE-P is nil, use the model selected by
 the `my-whisper-model' user-option.
-When FAST-MODEL-P is non-nil use the fast mode, the model specified by
+When FAST-MODE-P is non-nil use the fast mode, the model specified by
 `my-whisper-model-fast'.
 
 Record audio until you press \\[keyboard-quit], then transcribes it and insert
@@ -178,29 +201,26 @@ the text at point."
          (vocab-prompt (my-whisper--get-vocabulary-prompt))
          (vocab-word-count (my-whisper--check-vocabulary-length)))
 
-    ;; Start recording audio
-    (start-process "record-audio" nil "/bin/sh" "-c"
-                   (format "sox -d -r 16000 -c 1 -b 16 %s --no-show-progress 2>/dev/null" wav-file))
-    ;; Inform user recording has started with vocabulary warning if needed
+    ;; Inform user recording is starting. Warn if vocabulary is too large.
     (my-whisper--start-message fast-mode-p vocab-word-count)
 
-    ;; Wait for user to stop (C-g)
-    (condition-case nil
-        (while t (sit-for 1))
-      (quit (interrupt-process "record-audio")))
+    ;; Record audio in the specified wav-file
+    (my-whisper-record-audio-in wav-file)
 
     ;; Run Whisper STT with selected model
-    (let* ((whisper-cmd (if vocab-prompt
-                            (format "%s -m %s -f %s -nt -np --prompt \"%s\" 2>/dev/null"
-                                    (my-whisper--cli-path)
-                                    (my-whisper--model-path fast-mode-p)
-                                    wav-file
-                                    (replace-regexp-in-string "\"" "\\\\\"" vocab-prompt))
-                          (format "%s -m %s -f %s -nt -np 2>/dev/null"
-                                  (my-whisper--cli-path)
-                                  (my-whisper--model-path fast-mode-p)
-                                  wav-file)))
-           (proc (start-process "whisper-stt" temp-buf "/bin/sh" "-c" whisper-cmd)))
+    (let* ((whisper-cmd
+            (if vocab-prompt
+                (format "%s -m %s -f %s -nt -np --prompt \"%s\" 2>/dev/null"
+                        (my-whisper--cli-path)
+                        (my-whisper--model-path fast-mode-p)
+                        wav-file
+                        (replace-regexp-in-string "\"" "\\\\\"" vocab-prompt))
+              (format "%s -m %s -f %s -nt -np 2>/dev/null"
+                      (my-whisper--cli-path)
+                      (my-whisper--model-path fast-mode-p)
+                      wav-file)))
+           (proc
+            (start-process "whisper-stt" temp-buf "/bin/sh" "-c" whisper-cmd)))
       ;; Properly capture `temp-buf` using a lambda
       (set-process-sentinel
        proc
@@ -220,7 +240,7 @@ the text at point."
                         (insert output " ")))))
                 ;; Clean up temporary buffer
                 (kill-buffer ,temp-buf)
-                ;; And delete WAV file that has been processed.
+                And delete WAV file that has been processed.
                 (when (file-exists-p ,wav-file)
                   (delete-file ,wav-file)))
             ;; No detection of end: error!
