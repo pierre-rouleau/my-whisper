@@ -224,18 +224,19 @@ the text at point."
            (temp-buf (generate-new-buffer " *Whisper Temp*"))
            (vocab-prompt (my-whisper--get-vocabulary-prompt))
            (vocab-word-count (my-whisper--check-vocabulary-length))
-           (whisper-cmd
-            (format "%s -m %s -f %s -nt -np %s 2>/dev/null"
-                    (my-whisper--cli-path)
-                    (my-whisper--model-path model)
-                    wav-file
-                    (if vocab-prompt
-                        (format "--prompt \"%s\""
-                                (replace-regexp-in-string "\"" "\\\\\""
-                                                          vocab-prompt))
-                      "")))
-           (proc nil))
+           (whisper-cmd-list (list (expand-file-name (my-whisper--cli-path))
+                                   "-m" (expand-file-name (my-whisper--model-path model))
+                                   "-f" (expand-file-name wav-file)
+                                   "-nt"
+                                   "-np")))
+      ;; if a vocabulary is defined, add a prompt command with it.
+      (when vocab-prompt
+        (setq whisper-cmd-list (reverse whisper-cmd-list))
+        (push "--prompt" whisper-cmd-list)
+        (push (replace-regexp-in-string "\"" "\\\\\"" vocab-prompt) whisper-cmd-list)
+        (setq whisper-cmd-list (reverse whisper-cmd-list)))
 
+      ;; (message "%S" whisper-cmd-list)
       ;; Inform user recording is starting. Warn if vocabulary is too large.
       (my-whisper--start-message model vocab-word-count)
 
@@ -243,33 +244,33 @@ the text at point."
       (my-whisper-record-audio-in wav-file)
 
       ;; Run Whisper STT (Speech To Text) with selected model
-      (setq proc (start-process "whisper-stt" temp-buf "/bin/sh" "-c"
-                                whisper-cmd))
-
-      ;; Properly capture `temp-buf` using a lambda
-      (set-process-sentinel
-       proc
-       (lambda (_proc event)
-         (if (string= event "finished\n")
-             (when (buffer-live-p temp-buf)
-               ;; Trim excess white space
-               (let ((output (string-trim
-                              (with-current-buffer temp-buf
-                                (buffer-string)))))
-                 (if (string-empty-p output)
-                     (message "Whisper: No transcription output.")
-                   (when (buffer-live-p original-buf)
-                     (with-current-buffer original-buf
-                       (goto-char original-point)
-                       ;; Insert text, then a single space
-                       (insert output " ")))))
-               ;; Clean up temporary buffer
-               (kill-buffer temp-buf)
-               ;; And delete WAV file that has been processed.
-               (when (file-exists-p wav-file)
-                 (delete-file wav-file)))
-           ;; No detection of end: error!
-           (message "Whisper process error: %s" event)))))))
+      (make-process
+       :name "whisper-stt"
+       :buffer temp-buf
+       :command whisper-cmd-list
+       :connection-type 'pipe
+       :stderr (get-buffer-create "*my-whisper err*")
+       :sentinel (lambda (_proc event)
+                   (if (string= event "finished\n")
+                       (when (buffer-live-p temp-buf)
+                         ;; Trim excess white space
+                         (let ((output (string-trim
+                                        (with-current-buffer temp-buf
+                                          (buffer-string)))))
+                           (if (string-empty-p output)
+                               (message "Whisper: No transcription output.")
+                             (when (buffer-live-p original-buf)
+                               (with-current-buffer original-buf
+                                 (goto-char original-point)
+                                 ;; Insert text, then a single space
+                                 (insert output " ")))))
+                         ;; Clean up temporary buffer
+                         (kill-buffer temp-buf)
+                         ;; And delete WAV file that has been processed.
+                         (when (file-exists-p wav-file)
+                           (delete-file wav-file)))
+                     ;; No detection of end: error!
+                     (message "Whisper process error: %s" event)))))))
 
 (provide 'my-whisper)
 ;;; my-whisper.el ends here
