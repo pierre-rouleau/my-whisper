@@ -67,17 +67,25 @@
   :group 'my-whisper
   :type 'directory)
 
-(defcustom my-whisper-model "ggml-base.en.bin"
-  "Whisper Model.
+(defcustom my-whisper-model-fast "ggml-base.en.bin"
+  "Whisper model for fast transcription mode.
+This model is used by `my-whisper-transcribe-fast'."
+  :group 'my-whisper
+  :type 'string)
 
-Select one of the following:
-- 1: Base model,   fast mode:     ggml-base.en.bin
-- 2: Medium model, accurate mode: ggml-medium.en.bin
-- 3: Other: specify the file name."
+(defcustom my-whisper-model "ggml-medium.en.bin"
+  "Whisper model for accurate transcription mode.
+This model is used by `my-whisper-transcribe'.
+
+Common options:
+- ggml-medium.en.bin: Good balance of speed and accuracy
+- ggml-large-v3-turbo.bin: Best accuracy, slower
+- ggml-small.en.bin: Faster than medium, less accurate"
   :group 'my-whisper
   :type '(choice
-          (const :tag "Base model: fast mode" "ggml-base.en.bin")
-          (const :tag "Medium model: accurate mode" "ggml-medium.en.bin")
+          (const :tag "Medium model" "ggml-medium.en.bin")
+          (const :tag "Large model" "ggml-large-v3-turbo.bin")
+          (const :tag "Small model" "ggml-small.en.bin")
           (string :tag "Other")))
 
 (defun my-whisper--cli-path ()
@@ -85,11 +93,12 @@ Select one of the following:
   (format "%s/build/bin/whisper-cli"
           (directory-file-name my-whisper-homedir)))
 
-(defun my-whisper--model-path ()
-  "Return the path to the whisper model file."
+(defun my-whisper--model-path (&optional model)
+  "Return the path to the whisper model file.
+If MODEL is nil, use `my-whisper-model'."
   (format "%s/models/%s"
           (directory-file-name my-whisper-homedir)
-          my-whisper-model))
+          (or model my-whisper-model)))
 
 
 (defcustom my-whisper-vocabulary-file (expand-file-name (locate-user-emacs-file "whisper-vocabulary.txt"))
@@ -126,10 +135,11 @@ Returns nil if file doesn't exist or is empty."
         (unless (string-empty-p content)
           word-count)))))
 
-(defun my-whisper--validate-environment ()
-  "Validate current settings.  Issue a user error if something is wrong."
+(defun my-whisper--validate-environment (&optional model)
+  "Validate current settings.
+If MODEL is nil, validate `my-whisper-model'."
   (let ((cli-path (my-whisper--cli-path))
-        (model-path (my-whisper--model-path)))
+        (model-path (my-whisper--model-path model)))
     (unless (file-directory-p my-whisper-homedir)
       (user-error "Invalid my-whisper-homedir (%s)" my-whisper-homedir))
     (unless (file-executable-p cli-path)
@@ -146,7 +156,7 @@ Returns nil if file doesn't exist or is empty."
 Records audio until you press \\[keyboard-quit], then transcribes it
 and inserts the text at point."
   (interactive)
-  (my-whisper--validate-environment)
+  (my-whisper--validate-environment my-whisper-model-fast)
   (let* ((original-buf (current-buffer))
          (original-point (point-marker)) ; Marker tracks position even if buffer changes
          (wav-file (format "/tmp/whisper-recording-%s.wav" (emacs-pid)))
@@ -170,12 +180,12 @@ and inserts the text at point."
     (let* ((whisper-cmd (if vocab-prompt
                             (format "%s -m %s -f %s -nt -np --prompt \"%s\" 2>/dev/null"
                                     (my-whisper--cli-path)
-                                    (my-whisper--model-path)
+                                    (my-whisper--model-path my-whisper-model-fast)
                                     wav-file
                                     (replace-regexp-in-string "\"" "\\\\\"" vocab-prompt))
                           (format "%s -m %s -f %s -nt -np 2>/dev/null"
                                   (my-whisper--cli-path)
-                                  (my-whisper--model-path)
+                                  (my-whisper--model-path my-whisper-model-fast)
                                   wav-file)))
            (proc (start-process "whisper-stt" temp-buf "/bin/sh" "-c" whisper-cmd)))
       ;; Properly capture `temp-buf` using a lambda
