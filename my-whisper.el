@@ -4,7 +4,7 @@
 
 ;; Author: Pierre Rouleau based on original work done by Raoul Comninos
 ;; Version: 0.0.2
-;; Package-Version: 20251129.1223
+;; Package-Version: 20251129.1236
 ;; Package-Requires: ((emacs "25.1"))
 ;; Keywords: convenience, speech, whisper, transcription
 ;; URL: https://github.com/emacselements/my-whisper
@@ -313,25 +313,6 @@ Recording starting with %s. Editing halted. Press C-g to stop."
                    ;; No detection of end: error!
                    (message "Whisper process error: %s" event))))))
 
-
-;;;###autoload
-(defun my-whisper-transcribe-file (fname)
-  "Transcribe a recorded audio file FNAME, insert transcribed text at point.
-This command can only be used when `my-whisper-mode is inactive."
-  (interactive "fWAV file to transcribe: ")
-  ;; Validate requirements first
-  (if my-whisper-mode
-      (user-error "Cannot use this command while my-whisper-mode is active!"))
-  (unless (file-exists-p fname)
-    (user-error "Specified file does not exist: %s" fname))
-  (my-whisper--validate-environment)
-
-  ;; All is OK, transcribe the file.
-  ;; Set the name of the file
-  (setq my-whisper--wav-file fname)
-  (my-whisper--transcribe)
-  (setq my-whisper--wav-file nil))
-
 ;;;###autoload
 (defun my-whisper-stop-record ()
   "Stop recording, insert transcribed text at point."
@@ -387,7 +368,25 @@ buffer.
           (my-whisper--transcribe)
           (setq my-whisper--wav-file nil))))))
 
+;;;###autoload
+(defun my-whisper-transcribe-file (fname)
+  "Transcribe a recorded audio file FNAME, insert transcribed text at point.
+This command can only be used when `my-whisper-mode is inactive."
+  (interactive "fWAV file to transcribe: ")
+  ;; Validate requirements first
+  (if my-whisper-mode
+      (user-error "Cannot use this command while my-whisper-mode is active!"))
+  (unless (file-exists-p fname)
+    (user-error "Specified file does not exist: %s" fname))
+  (my-whisper--validate-environment)
 
+  ;; All is OK, transcribe the file.
+  ;; Set the name of the file
+  (setq my-whisper--wav-file fname)
+  (my-whisper--transcribe)
+  (setq my-whisper--wav-file nil))
+
+;; ---------------------------------------------------------------------------
 (provide 'my-whisper)
 
 ;; Local variables:
