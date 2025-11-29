@@ -87,6 +87,18 @@
   :group 'my-whisper
   :type 'string)
 
+(defcustom my-whisper-key-for-stop-record (kbd "C-c .")
+  "Key binding for `my-whisper-stop-record'.
+Use a string of the same format that what is the output of `kbd'."
+  :group 'my-whisper
+  :type 'key)
+
+(defcustom my-whisper-key-for-record-again (kbd "C-c ,")
+  "Key binding for `my-whisperrecord-again'.
+Use a string of the same format that what is the output of `kbd'."
+  :group 'my-whisper
+  :type 'key)
+
 (defcustom my-whisper-homedir "~/whisper.cpp/"
   "The whisper.cpp top directory."
   :group 'my-whisper
@@ -217,6 +229,11 @@ Recording starting with %s. Editing halted. Press C-g to stop."
 (defvar my-whisper--wav-file nil
   "Name of wave-file used during mode execution.")
 
+(defun my-whisper--set-lighter-to (lighter)
+  "Update my-whisper lighter in the mode lines of all buffers to LIGHTER."
+  (setcar (cdr (assq 'my-whisper-mode minor-mode-alist)) lighter)
+  ;; force update of all modelines
+  (force-mode-line-update t))
 
 (defun my-whisper-record-audio ()
   "Record audio, store it in the specified WAV-FILE."
@@ -234,7 +251,7 @@ Recording starting with %s. Editing halted. Press C-g to stop."
                    my-whisper--wav-file
                    "--no-show-progress")
     (setq my-whisper--recording-process-name record-process-name)
-    (setcar (cdr (assq 'my-whisper-mode minor-mode-alist)) my-whisper-recording-lighter)
+    (my-whisper--set-lighter-to my-whisper-recording-lighter)
     (message "Recording audio!")))
 
 (defun my-whisper--transcribe ()
@@ -294,7 +311,7 @@ Recording starting with %s. Editing halted. Press C-g to stop."
   (interrupt-process my-whisper--recording-process-name)
   (setq my-whisper--recording-process-name nil)
   (message "Audio recording stopped.")
-  (setcar (cdr (assq 'my-whisper-mode minor-mode-alist)) my-whisper-idle-lighter)
+  (my-whisper--set-lighter-to my-whisper-idle-lighter)
   (my-whisper--transcribe))
 
 ;;;###autoload
@@ -305,12 +322,10 @@ Recording starting with %s. Editing halted. Press C-g to stop."
       (user-error "Already recording!")
     (my-whisper-record-audio)))
 
-;; [:todo 2025-11-28, by Pierre Rouleau: allow customization of the selected
-;; key bindings]
 (defvar my-whisper-keymap
   (let ((map (make-sparse-keymap)))
-    (define-key map (kbd "C-c g") #'my-whisper-stop-record)
-    (define-key map (kbd "C-c r") #'my-whisper-record-again)
+    (define-key map my-whisper-key-for-stop-record #'my-whisper-stop-record)
+    (define-key map my-whisper-key-for-record-again #'my-whisper-record-again)
     map))
 
 ;;;###autoload
