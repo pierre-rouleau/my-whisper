@@ -3,6 +3,7 @@
 ;; Copyright (C) 2025 Raoul Comninos
 
 ;; Author: Raoul Comninos
+;; Author: Pierre Rouleau
 ;; Version: 1.0.0
 ;; Package-Requires: ((emacs "25.1"))
 ;; Keywords: convenience, speech, whisper, transcription
@@ -37,6 +38,8 @@
 ;; Whisper models, inserting the transcribed text at your cursor.
 
 ;; Features:
+;; - `my-whisper-mode', a global minor mode that records audio and insert
+;;   transcribed text in buffer.
 ;; - Two transcription modes: fast (base.en) and accurate (medium.en)
 ;; - Custom vocabulary support for specialized terminology
 ;; - Automatic vocabulary length validation
@@ -44,12 +47,25 @@
 ;; - Clean temporary file management
 
 ;; Basic usage:
-;;       M-x my-whisper-transcribe  ; Use mode selected by `my-whisper-model'
-;;                                  ; which is the accurate mode by default.
-;;   C-u M-x my-whisper-transcribe  ; Fast mode (base.en model)
-
-;; Recommended keybindings (add to your init.el):
-;;   (global-set-key (kbd "C-c n") #'my-whisper-transcribe)
+;;
+;;  - Activate whisper-mode with: M-x my-whisper-mode
+;;    - This starts audio recording store in a WAV file.
+;;  - Stop recording and insert transcribed text by one of the following:
+;;    - C-c g  : to stop, insert transcribed text but keep mode active.
+;;      - You can start recording again with: C-c r
+;;    - M-x my-whisper-mode : stop recording, insert transcribed text and
+;;                            stop the mode.
+;;
+;; The `my-whisper-mode' is a global minor mode; recording audio does not halt
+;; Emacs and you can execute any other Emacs operation.
+;;
+;; Text is inserted inside the buffer that is active at the moment you stop
+;; recording (or stop the minor mode)
+;;
+;; Recommended keybindings to toggle `my-whisper-mode' to add to your init.el
+;; file:
+;;
+;;   (global-set-key (kbd "C-c w") #'my-whisper-mode)
 
 ;; See the README for installation and configuration details.
 
@@ -61,6 +77,15 @@
   :link '(url-link :tag "my-whisper @ Github"
                    "https://github.com/emacselements/my-whisper"))
 
+(defcustom my-whisper-recording-lighter " 🎙️ "
+  "Mode line lighter used by `my-whisper-mode' when recording."
+  :group 'my-whisper
+  :type 'string)
+
+(defcustom my-whisper-idle-lighter "!🎙️ "
+  "Mode line lighter used by `my-whisper-mode' when idle."
+  :group 'my-whisper
+  :type 'string)
 
 (defcustom my-whisper-homedir "~/whisper.cpp/"
   "The whisper.cpp top directory."
@@ -84,7 +109,7 @@ This model is used by `my-whisper-transcribe-fast'."
 
 (defcustom my-whisper-model "ggml-medium.en.bin"
   "Whisper model for accurate transcription mode.
-This model is used by `my-whisper-transcribe'.
+This model is used by `my-whisper-mode'.
 
 The common options (all English) models:
 - ggml-large-v3-turbo.bin: Best accuracy, slower
@@ -94,7 +119,7 @@ The common options (all English) models:
   :group 'my-whisper
   :type '(choice
           (const :tag "Large  model, best accuracy, slower  " "ggml-large-v3-turbo.bin")
-          (const :tag "Medium model, balance speed/accuracy " "ggml-medium.en.bin")
+          ;; (const :tag "Medium model, balance speed/accuracy " "ggml-medium.en.bin")
           (const :tag "Small  model, faster, less accurate  " "ggml-small.en.bin")
           (const :tag "Base   model, fastest, least accurate" "ggml-base.en.bin")
           (string :tag "Other model")))
@@ -187,7 +212,13 @@ WARNING: Vocabulary file has %d words (max: 150)!"
 Recording starting with %s. Editing halted. Press C-g to stop."
              (my-whisper-model-desc model))))
 
-(defun my-whisper-record-audio-in (wav-file)
+(defvar my-whisper--recording-process-name nil
+  "Nil when inactive, name of recording process when recording.")
+(defvar my-whisper--wav-file nil
+  "Name of wave-file used during mode execution.")
+
+
+(defun my-whisper-record-audio ()
   "Record audio, store it in the specified WAV-FILE."
   ;; Start recording audio.
   ;; Use the sox command. Ref: https://sourceforge.net/projects/sox/
@@ -196,82 +227,115 @@ Recording starting with %s. Editing halted. Press C-g to stop."
   ;;  -c channel : number of channel audio in the file.  Use 1.
   ;;  -b bits: bit-length of each encoded sample.
   ;;  --no-show-progress : do not print a progress bar in stdout.
-  (start-process "record-audio" nil my-whisper-sox
-                 "-d" "-r" " 16000" "-c" "1" "-b" "16"
-                 wav-file
-                 "--no-show-progress")
-    ;; Wait for user to stop (C-g)
-    (condition-case nil
-        (while t (sit-for 1))
-      (quit (interrupt-process "record-audio"))))
+  (let ((record-process-name (format "my-whisper-record-audio-for-%s" (emacs-pid))))
+    (start-process record-process-name
+                   nil my-whisper-sox
+                   "-d" "-r" " 16000" "-c" "1" "-b" "16"
+                   my-whisper--wav-file
+                   "--no-show-progress")
+    (setq my-whisper--recording-process-name record-process-name)
+    (setcar (cdr (assq 'my-whisper-mode minor-mode-alist)) my-whisper-recording-lighter)
+    (message "Recording audio!")))
+
+(defun my-whisper--transcribe ()
+  "Transcribe audio previously recorded."
+  (let* ((model my-whisper-model)
+         (wav-file my-whisper--wav-file)
+         (original-buf (current-buffer))
+         (original-point (point-marker)) ; Marker tracks position even if buffer changes
+         (vocab-prompt (my-whisper--get-vocabulary-prompt))
+         (temp-buf (generate-new-buffer " *Whisper Temp*"))
+
+         (whisper-cmd-list (list (expand-file-name (my-whisper--cli-path))
+                                 "-m" (expand-file-name (my-whisper--model-path model))
+                                 "-f" (expand-file-name wav-file)
+                                 "-nt"
+                                 "-np")))
+    ;; if a vocabulary is defined, add a prompt command with it.
+    (when vocab-prompt
+      (setq whisper-cmd-list (reverse whisper-cmd-list))
+      (push "--prompt" whisper-cmd-list)
+      (push (replace-regexp-in-string "\"" "\\\\\"" vocab-prompt) whisper-cmd-list)
+      (setq whisper-cmd-list (reverse whisper-cmd-list)))
+
+    ;; Run Whisper STT (Speech To Text) with selected model
+    (make-process
+     :name "whisper-stt"
+     :buffer temp-buf
+     :command whisper-cmd-list
+     :connection-type 'pipe
+     :stderr (get-buffer-create "*my-whisper err*")
+     :sentinel (lambda (_proc event)
+                 (if (string= event "finished\n")
+                     (when (buffer-live-p temp-buf)
+                       ;; Trim excess white space
+                       (let ((output (string-trim
+                                      (with-current-buffer temp-buf
+                                        (buffer-string)))))
+                         (if (string-empty-p output)
+                             (message "Whisper: No transcription output.")
+                           (when (buffer-live-p original-buf)
+                             (with-current-buffer original-buf
+                               (goto-char original-point)
+                               ;; Insert text, then a single space
+                               (insert output " ")))))
+                       ;; Clean up temporary buffer
+                       (kill-buffer temp-buf)
+                       ;; And delete WAV file that has been processed.
+                       (when (file-exists-p wav-file)
+                         (delete-file wav-file)))
+                   ;; No detection of end: error!
+                   (message "Whisper process error: %s" event))))))
 
 ;;;###autoload
-(defun my-whisper-transcribe (&optional fast-mode-p)
-  "Record audio and transcribe text in current buffer.
-By default, or when FAST-MODE-P is nil, use the model selected by
-the `my-whisper-model' user-option.
-When FAST-MODE-P is non-nil use the fast mode, the model specified by
-`my-whisper-model-fast'.
+(defun my-whisper-stop-record ()
+  "Stop Recording."
+  (interactive)
+  (interrupt-process my-whisper--recording-process-name)
+  (setq my-whisper--recording-process-name nil)
+  (message "Audio recording stopped.")
+  (setcar (cdr (assq 'my-whisper-mode minor-mode-alist)) my-whisper-idle-lighter)
+  (my-whisper--transcribe))
 
-Record audio until you press \\[keyboard-quit], then transcribes it and insert
-the text at point."
-  (interactive "P")
-  (let ((model (if fast-mode-p my-whisper-model-fast
-                 my-whisper-model)))
+;;;###autoload
+(defun my-whisper-record-again ()
+  "Start recording again."
+  (interactive)
+  (if my-whisper--recording-process-name
+      (user-error "Already recording!")
+    (my-whisper-record-audio)))
+
+;;;###autoload
+(define-minor-mode my-whisper-mode
+  "Minor mode to transcribe speech to text.
+When activate, start recording.
+When stopped, stops recording and insert transcribed text in current
+buffer."
+  :lighter my-whisper-recording-lighter
+  :keymap (let ((map (make-sparse-keymap)))
+            (define-key map (kbd "C-c g") #'my-whisper-stop-record)
+            (define-key map (kbd "C-c r") #'my-whisper-record-again)
+            map)
+  :global t
+  (let ((model my-whisper-model))
     (my-whisper--validate-environment model)
-    (let* ((original-buf (current-buffer))
-           (original-point (point-marker)) ; Marker tracks position even if buffer changes
-           (wav-file (format "/tmp/whisper-recording-%s.wav" (emacs-pid)))
-           (temp-buf (generate-new-buffer " *Whisper Temp*"))
-           (vocab-prompt (my-whisper--get-vocabulary-prompt))
-           (vocab-word-count (my-whisper--check-vocabulary-length))
-           (whisper-cmd-list (list (expand-file-name (my-whisper--cli-path))
-                                   "-m" (expand-file-name (my-whisper--model-path model))
-                                   "-f" (expand-file-name wav-file)
-                                   "-nt"
-                                   "-np")))
-      ;; if a vocabulary is defined, add a prompt command with it.
-      (when vocab-prompt
-        (setq whisper-cmd-list (reverse whisper-cmd-list))
-        (push "--prompt" whisper-cmd-list)
-        (push (replace-regexp-in-string "\"" "\\\\\"" vocab-prompt) whisper-cmd-list)
-        (setq whisper-cmd-list (reverse whisper-cmd-list)))
+    (let ((wav-file (format "/tmp/whisper-recording-%s.wav" (emacs-pid)))
+          (vocab-word-count (my-whisper--check-vocabulary-length)) )
+      (if my-whisper-mode
+          ;; Start minor mode: start recording
+          (progn
+            ;; Inform user recording is starting. Warn if vocabulary is too large.
+            (my-whisper--start-message model vocab-word-count)
+            ;; Record audio in the specified wav-file
+            (setq my-whisper--wav-file wav-file)
+            (my-whisper-record-audio))
 
-      ;; (message "%S" whisper-cmd-list)
-      ;; Inform user recording is starting. Warn if vocabulary is too large.
-      (my-whisper--start-message model vocab-word-count)
+        ;; Stop minor mode: stop recording and insert transcribed text
+        (when my-whisper--recording-process-name
+          (my-whisper-stop-record)
+          (my-whisper--transcribe)
+          (setq my-whisper--wav-file nil))))))
 
-      ;; Record audio in the specified wav-file
-      (my-whisper-record-audio-in wav-file)
-
-      ;; Run Whisper STT (Speech To Text) with selected model
-      (make-process
-       :name "whisper-stt"
-       :buffer temp-buf
-       :command whisper-cmd-list
-       :connection-type 'pipe
-       :stderr (get-buffer-create "*my-whisper err*")
-       :sentinel (lambda (_proc event)
-                   (if (string= event "finished\n")
-                       (when (buffer-live-p temp-buf)
-                         ;; Trim excess white space
-                         (let ((output (string-trim
-                                        (with-current-buffer temp-buf
-                                          (buffer-string)))))
-                           (if (string-empty-p output)
-                               (message "Whisper: No transcription output.")
-                             (when (buffer-live-p original-buf)
-                               (with-current-buffer original-buf
-                                 (goto-char original-point)
-                                 ;; Insert text, then a single space
-                                 (insert output " ")))))
-                         ;; Clean up temporary buffer
-                         (kill-buffer temp-buf)
-                         ;; And delete WAV file that has been processed.
-                         (when (file-exists-p wav-file)
-                           (delete-file wav-file)))
-                     ;; No detection of end: error!
-                     (message "Whisper process error: %s" event)))))))
 
 (provide 'my-whisper)
 ;;; my-whisper.el ends here
