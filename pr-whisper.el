@@ -146,12 +146,13 @@ If MODEL is nil, use `pr-whisper-model'."
   :group 'pr-whisper
   :type 'integer)
 
-(defcustom pr-whisper-history-filter-regexp
+(defcustom pr-whisper-noise-regexp
   (rx (or (seq "(" (or "typing" "silence" "music" "applause") ")")
           (seq "[" (or "typing" "silence" "music" "applause") "]")))
-  "Regexp matching transcriptions to exclude from history.
+  "Regexp matching noise transcriptions to ignore.
 Whisper outputs these when it detects non-speech audio.
-Set to nil to disable filtering."
+Matching transcriptions are not inserted and not added to history.
+Set to nil to disable noise filtering."
   :group 'pr-whisper
   :type '(choice (const :tag "No filtering" nil)
                  (regexp :tag "Filter regexp")))
@@ -265,17 +266,21 @@ Entries are promoted to most recent when re-inserted via
     (pr-whisper--set-lighter-to pr-whisper-lighter-when-recording)
     (message "Recording audio!")))
 
-(defun pr-whisper--history-filter-p (text)
-  "Return non-nil if TEXT should be excluded from history."
-  (or (< (length text) pr-whisper-history-min-length)
-      (and pr-whisper-history-filter-regexp
-           (string-match-p pr-whisper-history-filter-regexp text))))
+(defun pr-whisper--noise-p (text)
+  "Return non-nil if TEXT is noise that should be ignored."
+  (and pr-whisper-noise-regexp
+       (string-match-p pr-whisper-noise-regexp text)))
+
+(defun pr-whisper--too-short-p (text)
+  "Return non-nil if TEXT is too short for history."
+  (< (length text) pr-whisper-history-min-length))
 
 (defun pr-whisper--add-to-history (text buffer-name)
   "Add TEXT with BUFFER-NAME to the history ring.
-TEXT is filtered based on `pr-whisper-history-filter-regexp' and
-`pr-whisper-history-min-length'."
-  (unless (pr-whisper--history-filter-p text)
+TEXT is excluded if it matches `pr-whisper-noise-regexp' or is
+shorter than `pr-whisper-history-min-length'."
+  (unless (or (pr-whisper--noise-p text)
+              (pr-whisper--too-short-p text))
     (unless pr-whisper--history-ring
       (setq pr-whisper--history-ring (make-ring pr-whisper-history-capacity)))
     (ring-insert pr-whisper--history-ring (cons text buffer-name))))
@@ -309,25 +314,26 @@ TEXT is filtered based on `pr-whisper-history-filter-regexp' and
      :connection-type 'pipe
      :stderr (get-buffer-create "*pr-whisper err*")
      :sentinel (lambda (_proc event)
-                 (message "event %s" event)
                  (if (string= event "finished\n")
                      (when (buffer-live-p temp-buf)
                        ;; Trim excess white space
                        (let ((output (string-trim
                                       (with-current-buffer temp-buf
                                         (buffer-string)))))
-                         (if (string-empty-p output)
-                             (message "Whisper: No transcription output.")
+                         (cond
+                          ((string-empty-p output)
+                           (message "Whisper: No transcription output."))
+                          ((pr-whisper--noise-p output)
+                           (message "Whisper: Ignored noise: %s" output))
+                          (t
                            (when (buffer-live-p original-buf)
                              (with-current-buffer original-buf
                                (if (eq major-mode 'vterm-mode)
-                                   (progn
-                                     (message "pr-whisper vterm sending %s" output)
-                                     (vterm-send-string (concat output " ")))
+                                   (vterm-send-string (concat output " "))
                                  (goto-char original-point)
                                  ;; Insert text, then a single space
                                  (insert output " ")))
-                             (pr-whisper--add-to-history output (buffer-name original-buf)))))
+                             (pr-whisper--add-to-history output (buffer-name original-buf))))))
                        ;; Clean up temporary buffer
                        (kill-buffer temp-buf)
                        ;; And delete WAV file that has been processed.
