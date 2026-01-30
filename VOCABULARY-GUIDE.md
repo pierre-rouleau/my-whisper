@@ -10,7 +10,7 @@ Default: `~/.emacs.d/whisper-vocabulary.txt`
 
 To use a different location, add to your `init.el`:
 ```elisp
-(setq whisper-vocabulary-file "/path/to/your/vocabulary.txt")
+(setq pr-whisper-vocabulary-file "/path/to/your/vocabulary.txt")
 ```
 
 ## Format
@@ -71,18 +71,18 @@ For different subjects, create separate vocabulary files:
 
 ```elisp
 ;; In your init.el
-(defun my-use-symposium-vocab ()
+(defun use-symposium-vocab ()
   (interactive)
-  (setq whisper-vocabulary-file "~/Documents/symposium-vocab.txt")
+  (setq pr-whisper-vocabulary-file "~/Documents/symposium-vocab.txt")
   (message "Using Symposium vocabulary"))
 
-(defun my-use-republic-vocab ()
+(defun use-republic-vocab ()
   (interactive)
-  (setq whisper-vocabulary-file "~/Documents/republic-vocab.txt")
+  (setq pr-whisper-vocabulary-file "~/Documents/republic-vocab.txt")
   (message "Using Republic vocabulary"))
 ```
 
-Then switch vocabularies as needed with `M-x my-use-symposium-vocab`.
+Then switch vocabularies as needed with `M-x use-symposium-vocab`.
 
 ## Troubleshooting
 
