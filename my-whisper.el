@@ -79,6 +79,8 @@
 
 ;;; Code:
 
+(declare-function vterm-send-string "vterm")
+
 (defgroup my-whisper nil
   "Speech-to-text using Whisper.cpp system."
   :group 'convenience
@@ -302,9 +304,13 @@ Recording starting with %s. Editing halted. Press C-g to stop."
                              (message "Whisper: No transcription output.")
                            (when (buffer-live-p original-buf)
                              (with-current-buffer original-buf
-                               (goto-char original-point)
-                               ;; Insert text, then a single space
-                               (insert output " ")))))
+                               (if (eq major-mode 'vterm-mode)
+                                   (progn
+                                     (message "my-whisper vterm sending %s" output)
+                                     (vterm-send-string (concat output " ")))
+                                 (goto-char original-point)
+                                 ;; Insert text, then a single space
+                                 (insert output " "))))))
                        ;; Clean up temporary buffer
                        (kill-buffer temp-buf)
                        ;; And delete WAV file that has been processed.
