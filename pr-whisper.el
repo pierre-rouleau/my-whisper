@@ -1,4 +1,4 @@
-;;; my-whisper.el --- Speech-to-text using Whisper.cpp -*- lexical-binding: t -*-
+;;; pr-whisper.el --- Speech-to-text using Whisper.cpp -*- lexical-binding: t -*-
 
 ;; Copyright (C) 2025 Raoul Comninos, Pierre Rouleau
 
@@ -7,7 +7,7 @@
 ;; Package-Version: 20251129.1236
 ;; Package-Requires: ((emacs "25.1"))
 ;; Keywords: convenience, speech, whisper, transcription
-;; URL: https://github.com/emacselements/my-whisper
+;; URL: https://github.com/emacselements/pr-whisper
 ;; SPDX-License-Identifier: MIT
 
 ;; This file is not part of GNU Emacs.
@@ -33,25 +33,25 @@
 
 ;;; Commentary:
 
-;; My-Whisper provides simple speech-to-text transcription using
+;; Pr-Whisper provides simple speech-to-text transcription using
 ;; Whisper.cpp.  It records audio via sox and transcribes it using
 ;; Whisper models, inserting the transcribed text at your cursor.
 
 ;; Features:
-;; - `my-whisper-mode', a global minor mode that enables speech-to-text.
+;; - `pr-whisper-mode', a global minor mode that enables speech-to-text.
 ;;   While active, use C-c . to toggle recording on/off.
-;; - `my-whisper-transcribe-file' command to transcribe an existing WAV file.
+;; - `pr-whisper-transcribe-file' command to transcribe an existing WAV file.
 ;; - Custom vocabulary support for specialized terminology
 ;; - Async processing with process sentinels
 
 ;; Basic usage:
 ;;
-;;  1. Enable the mode: M-x my-whisper-mode
+;;  1. Enable the mode: M-x pr-whisper-mode
 ;;  2. Start recording: C-c .
 ;;  3. Stop recording and transcribe: C-c . (same key toggles)
 ;;
 ;; The mode can stay enabled - just use C-c . whenever you want to dictate.
-;; Disabling the mode (M-x my-whisper-mode again) stops any active recording.
+;; Disabling the mode (M-x pr-whisper-mode again) stops any active recording.
 
 ;; See the README for installation and configuration details.
 
@@ -60,45 +60,45 @@
 (require 'ring)
 (declare-function vterm-send-string "vterm")
 
-(defgroup my-whisper nil
+(defgroup pr-whisper nil
   "Speech-to-text using Whisper.cpp system."
   :group 'convenience
-  :link '(url-link :tag "my-whisper @ Github"
-                   "https://github.com/emacselements/my-whisper"))
+  :link '(url-link :tag "pr-whisper @ Github"
+                   "https://github.com/emacselements/pr-whisper"))
 
-(defcustom my-whisper-lighter-when-recording " 🎙️ "
-  "Mode line lighter used by `my-whisper-mode' when recording."
-  :group 'my-whisper
+(defcustom pr-whisper-lighter-when-recording " 🎙️ "
+  "Mode line lighter used by `pr-whisper-mode' when recording."
+  :group 'pr-whisper
   :type 'string)
 
-(defcustom my-whisper-lighter-when-idle " ⏸️"
-  "Mode line lighter used by `my-whisper-mode' when idle."
-  :group 'my-whisper
+(defcustom pr-whisper-lighter-when-idle " ⏸️"
+  "Mode line lighter used by `pr-whisper-mode' when idle."
+  :group 'pr-whisper
   :type 'string)
 
-(defcustom my-whisper-key-for-toggle (kbd "C-c .")
-  "Key binding for `my-whisper-toggle-recording'.
+(defcustom pr-whisper-key-for-toggle (kbd "C-c .")
+  "Key binding for `pr-whisper-toggle-recording'.
 Use a string of the same format that what is the output of `kbd'."
-  :group 'my-whisper
+  :group 'pr-whisper
   :type 'key)
 
-(defcustom my-whisper-homedir "~/whisper.cpp/"
+(defcustom pr-whisper-homedir "~/whisper.cpp/"
   "The whisper.cpp top directory."
-  :group 'my-whisper
+  :group 'pr-whisper
   :type 'directory)
 
-(defcustom my-whisper-sox "sox"
+(defcustom pr-whisper-sox "sox"
   "The SoX Sound eXchange program name, with or without path.
 
 The default is sox, without a path; you can use this unchanged if it
 is installed in a directory in your PATH.  If it is stored somewhere else, then
 include its directory path."
-  :group 'my-whisper
+  :group 'pr-whisper
   :type 'string)
 
-(defcustom my-whisper-model "ggml-medium.en.bin"
+(defcustom pr-whisper-model "ggml-medium.en.bin"
   "Whisper model for accurate transcription mode.
-This model is used by `my-whisper-mode'.
+This model is used by `pr-whisper-mode'.
 
 The common options (all English) models:
 - ggml-large-v3-turbo.bin: Best accuracy, slower
@@ -107,8 +107,8 @@ The common options (all English) models:
 - ggml-base.en.bin       : Fastest, least accurate
 
 See the ggerganov whisper.cpp models link for other models.
-Store the models in the directory identified by `my-whisper-homedir'."
-  :group 'my-whisper
+Store the models in the directory identified by `pr-whisper-homedir'."
+  :group 'pr-whisper
   :link '(url-link :tag "ggerganov whisper.cpp models"
                    "https://huggingface.co/ggerganov/whisper.cpp/tree/main")
   :link '(url-link :tag "whisper.cpp @ Github"
@@ -120,7 +120,7 @@ Store the models in the directory identified by `my-whisper-homedir'."
           (const :tag "Base   model, fastest, least accurate" "ggml-base.en.bin")
           (string :tag "Other model")))
 
-(defun my-whisper-model-desc (model)
+(defun pr-whisper-model-desc (model)
   "Return a description string of specified MODEL, a string."
   (cond
    ((string= model "ggml-large-v3-turbo.bin") "Large model, best accuracy, slower")
@@ -129,123 +129,124 @@ Store the models in the directory identified by `my-whisper-homedir'."
    ((string= model "ggml-base.en.bin")        "Base model, fastest, least accurate")
    (t model)))
 
-(defun my-whisper--cli-path ()
+(defun pr-whisper--cli-path ()
   "Return the path to the whisper-cli executable."
   (format "%s/build/bin/whisper-cli"
-          (directory-file-name my-whisper-homedir)))
+          (directory-file-name pr-whisper-homedir)))
 
-(defun my-whisper--model-path (&optional model)
+(defun pr-whisper--model-path (&optional model)
   "Return the path to the whisper model file.
-If MODEL is nil, use `my-whisper-model'."
+If MODEL is nil, use `pr-whisper-model'."
   (format "%s/models/%s"
-          (directory-file-name my-whisper-homedir)
-          (or model my-whisper-model)))
+          (directory-file-name pr-whisper-homedir)
+          (or model pr-whisper-model)))
 
-(defcustom my-whisper-history-capacity 20
+(defcustom pr-whisper-history-capacity 20
   "Maximum number of transcriptions to keep in history ring."
-  :group 'my-whisper
+  :group 'pr-whisper
   :type 'integer)
 
-(defcustom my-whisper-history-filter-regexp
+(defcustom pr-whisper-history-filter-regexp
   (rx (or (seq "(" (or "typing" "silence" "music" "applause") ")")
           (seq "[" (or "typing" "silence" "music" "applause") "]")))
   "Regexp matching transcriptions to exclude from history.
 Whisper outputs these when it detects non-speech audio.
 Set to nil to disable filtering."
-  :group 'my-whisper
+  :group 'pr-whisper
   :type '(choice (const :tag "No filtering" nil)
                  (regexp :tag "Filter regexp")))
 
-(defcustom my-whisper-history-min-length 3
+(defcustom pr-whisper-history-min-length 3
   "Minimum character length for transcription to be added to history.
 Transcriptions shorter than this are filtered out."
-  :group 'my-whisper
+  :group 'pr-whisper
   :type 'integer)
 
-(defcustom my-whisper-vocabulary-file (expand-file-name
+(defcustom pr-whisper-vocabulary-file (expand-file-name
                                        (locate-user-emacs-file
                                         "whisper-vocabulary.txt"))
   "Path to file containing vocabulary hints for Whisper.
-This should contain proper nouns, specialized terms, etc.
-The file should contain comma-separated words/phrases that Whisper
-should recognize.
+This file provides context to help Whisper recognize proper nouns,
+technical terms, and specialized vocabulary.  Any text format works:
+contextual sentences, comma-separated lists, or mixed formats.
+See VOCABULARY-GUIDE.md for detailed guidance.
 
 You can either customize this path or set it in your init.el:
-  (setq my-whisper-vocabulary-file \"/path/to/your/vocabulary.txt\")"
-  :group 'my-whisper
+  (setq pr-whisper-vocabulary-file \"/path/to/your/vocabulary.txt\")"
+  :group 'pr-whisper
   :type 'file)
 
-(defun my-whisper--get-vocabulary-prompt ()
+(defun pr-whisper--get-vocabulary-prompt ()
   "Read vocabulary file and return as a prompt string for Whisper.
 Returns nil if file doesn't exist or is empty."
-  (when (and my-whisper-vocabulary-file
-             (file-exists-p my-whisper-vocabulary-file))
+  (when (and pr-whisper-vocabulary-file
+             (file-exists-p pr-whisper-vocabulary-file))
     (with-temp-buffer
-      (insert-file-contents my-whisper-vocabulary-file)
+      (insert-file-contents pr-whisper-vocabulary-file)
       (let ((content (string-trim (buffer-string))))
         (unless (string-empty-p content)
           content)))))
 
-(defun my-whisper--check-vocabulary-length ()
+(defun pr-whisper--check-vocabulary-length ()
   "Check vocabulary file length and return word count.
 Returns nil if file doesn't exist or is empty."
-  (when (and my-whisper-vocabulary-file
-             (file-exists-p my-whisper-vocabulary-file))
+  (when (and pr-whisper-vocabulary-file
+             (file-exists-p pr-whisper-vocabulary-file))
     (with-temp-buffer
-      (insert-file-contents my-whisper-vocabulary-file)
+      (insert-file-contents pr-whisper-vocabulary-file)
       (let* ((content (string-trim (buffer-string)))
              (word-count (length (split-string content))))
         (unless (string-empty-p content)
           word-count)))))
 
-(defun my-whisper--validate-environment (&optional model)
+(defun pr-whisper--validate-environment (&optional model)
   "Validate current settings.
-If MODEL is nil, use `my-whisper-model'."
-  (let ((cli-path (my-whisper--cli-path))
-        (model-path (my-whisper--model-path model)))
-    (unless (executable-find my-whisper-sox)
-      (user-error "The sox command is not accessible; is my-whisper-sox valid?"))
-    (unless (file-directory-p my-whisper-homedir)
-      (user-error "Invalid my-whisper-homedir (%s)" my-whisper-homedir))
+If MODEL is nil, use `pr-whisper-model'."
+  (let ((cli-path (pr-whisper--cli-path))
+        (model-path (pr-whisper--model-path model)))
+    (unless (executable-find pr-whisper-sox)
+      (user-error "The sox command is not accessible; is pr-whisper-sox valid?"))
+    (unless (file-directory-p pr-whisper-homedir)
+      (user-error "Invalid pr-whisper-homedir (%s)" pr-whisper-homedir))
     (unless (file-executable-p cli-path)
       (if (file-exists-p cli-path)
-          (user-error "My-whisper-cli (%s) is not an executable file!"
+          (user-error "Whisper-cli (%s) is not an executable file!"
                       cli-path))
-      (user-error "My-whisper-cli (%s) does not exist!" cli-path))
+      (user-error "Whisper-cli (%s) does not exist!" cli-path))
     (unless (file-exists-p model-path)
-      (user-error "My-whisper-model-path (%s) does not exist!"
+      (user-error "Whisper model (%s) does not exist!"
                   model-path))))
 
-(defun my-whisper--start-message (model vocab-word-count)
+(defun pr-whisper--start-message (model vocab-word-count)
   "Inform user recording is starting with MODEL, warn if vocabulary is too large.
 The VOCAB-WORD-COUNT is the number of words detected in the vocabulary file."
   (if (and vocab-word-count (> vocab-word-count 150))
       (message "\
 Recording starting with %s. Editing halted. Press C-g to stop.
 WARNING: Vocabulary file has %d words (max: 150)!"
-               (my-whisper-model-desc model)
+               (pr-whisper-model-desc model)
                vocab-word-count)
     (message "\
 Recording starting with %s. Editing halted. Press C-g to stop."
-             (my-whisper-model-desc model))))
+             (pr-whisper-model-desc model))))
 
-(defvar my-whisper--recording-process-name nil
+(defvar pr-whisper--recording-process-name nil
   "Nil when inactive, name of recording process when recording.")
-(defvar my-whisper--wav-file nil
+(defvar pr-whisper--wav-file nil
   "Name of wave-file used during mode execution.")
-(defvar my-whisper--history-ring nil
+(defvar pr-whisper--history-ring nil
   "Ring of recent transcriptions.
 Each entry is a cons cell (TEXT . BUFFER-NAME).
 Entries are promoted to most recent when re-inserted via
-`my-whisper-insert-from-history', implementing LRU-style eviction.")
+`pr-whisper-insert-from-history', implementing LRU-style eviction.")
 
-(defun my-whisper--set-lighter-to (lighter)
-  "Update my-whisper lighter in the mode lines of all buffers to LIGHTER."
-  (setcar (cdr (assq 'my-whisper-mode minor-mode-alist)) lighter)
+(defun pr-whisper--set-lighter-to (lighter)
+  "Update pr-whisper lighter in the mode lines of all buffers to LIGHTER."
+  (setcar (cdr (assq 'pr-whisper-mode minor-mode-alist)) lighter)
   ;; force update of all modelines
   (force-mode-line-update t))
 
-(defun my-whisper-record-audio ()
+(defun pr-whisper-record-audio ()
   "Record audio, store it in the specified WAV-FILE."
   ;; Start recording audio.
   ;; Use the sox command. Ref: https://sourceforge.net/projects/sox/
@@ -254,42 +255,42 @@ Entries are promoted to most recent when re-inserted via
   ;;  -c channel : number of channel audio in the file.  Use 1.
   ;;  -b bits: bit-length of each encoded sample.
   ;;  --no-show-progress : do not print a progress bar in stdout.
-  (let ((record-process-name (format "my-whisper-record-audio-for-%s" (emacs-pid))))
+  (let ((record-process-name (format "pr-whisper-record-audio-for-%s" (emacs-pid))))
     (start-process record-process-name
-                   nil my-whisper-sox
+                   nil pr-whisper-sox
                    "-d" "-r" " 16000" "-c" "1" "-b" "16"
-                   my-whisper--wav-file
+                   pr-whisper--wav-file
                    "--no-show-progress")
-    (setq my-whisper--recording-process-name record-process-name)
-    (my-whisper--set-lighter-to my-whisper-lighter-when-recording)
+    (setq pr-whisper--recording-process-name record-process-name)
+    (pr-whisper--set-lighter-to pr-whisper-lighter-when-recording)
     (message "Recording audio!")))
 
-(defun my-whisper--history-filter-p (text)
+(defun pr-whisper--history-filter-p (text)
   "Return non-nil if TEXT should be excluded from history."
-  (or (< (length text) my-whisper-history-min-length)
-      (and my-whisper-history-filter-regexp
-           (string-match-p my-whisper-history-filter-regexp text))))
+  (or (< (length text) pr-whisper-history-min-length)
+      (and pr-whisper-history-filter-regexp
+           (string-match-p pr-whisper-history-filter-regexp text))))
 
-(defun my-whisper--add-to-history (text buffer-name)
+(defun pr-whisper--add-to-history (text buffer-name)
   "Add TEXT with BUFFER-NAME to the history ring.
-TEXT is filtered based on `my-whisper-history-filter-regexp' and
-`my-whisper-history-min-length'."
-  (unless (my-whisper--history-filter-p text)
-    (unless my-whisper--history-ring
-      (setq my-whisper--history-ring (make-ring my-whisper-history-capacity)))
-    (ring-insert my-whisper--history-ring (cons text buffer-name))))
+TEXT is filtered based on `pr-whisper-history-filter-regexp' and
+`pr-whisper-history-min-length'."
+  (unless (pr-whisper--history-filter-p text)
+    (unless pr-whisper--history-ring
+      (setq pr-whisper--history-ring (make-ring pr-whisper-history-capacity)))
+    (ring-insert pr-whisper--history-ring (cons text buffer-name))))
 
-(defun my-whisper--transcribe ()
+(defun pr-whisper--transcribe ()
   "Transcribe audio previously recorded."
-  (let* ((model my-whisper-model)
-         (wav-file my-whisper--wav-file)
+  (let* ((model pr-whisper-model)
+         (wav-file pr-whisper--wav-file)
          (original-buf (current-buffer))
          (original-point (point-marker)) ; Marker tracks position even if buffer changes
-         (vocab-prompt (my-whisper--get-vocabulary-prompt))
+         (vocab-prompt (pr-whisper--get-vocabulary-prompt))
          (temp-buf (generate-new-buffer " *Whisper Temp*"))
 
-         (whisper-cmd-list (list (expand-file-name (my-whisper--cli-path))
-                                 "-m" (expand-file-name (my-whisper--model-path model))
+         (whisper-cmd-list (list (expand-file-name (pr-whisper--cli-path))
+                                 "-m" (expand-file-name (pr-whisper--model-path model))
                                  "-f" (expand-file-name wav-file)
                                  "-nt"
                                  "-np")))
@@ -306,7 +307,7 @@ TEXT is filtered based on `my-whisper-history-filter-regexp' and
      :buffer temp-buf
      :command whisper-cmd-list
      :connection-type 'pipe
-     :stderr (get-buffer-create "*my-whisper err*")
+     :stderr (get-buffer-create "*pr-whisper err*")
      :sentinel (lambda (_proc event)
                  (message "event %s" event)
                  (if (string= event "finished\n")
@@ -321,12 +322,12 @@ TEXT is filtered based on `my-whisper-history-filter-regexp' and
                              (with-current-buffer original-buf
                                (if (eq major-mode 'vterm-mode)
                                    (progn
-                                     (message "my-whisper vterm sending %s" output)
+                                     (message "pr-whisper vterm sending %s" output)
                                      (vterm-send-string (concat output " ")))
                                  (goto-char original-point)
                                  ;; Insert text, then a single space
                                  (insert output " ")))
-                             (my-whisper--add-to-history output (buffer-name original-buf)))))
+                             (pr-whisper--add-to-history output (buffer-name original-buf)))))
                        ;; Clean up temporary buffer
                        (kill-buffer temp-buf)
                        ;; And delete WAV file that has been processed.
@@ -336,78 +337,78 @@ TEXT is filtered based on `my-whisper-history-filter-regexp' and
                    (message "Whisper process error: %s" event))))))
 
 ;;;###autoload
-(defun my-whisper-stop-record ()
+(defun pr-whisper-stop-record ()
   "Stop recording, insert transcribed text at point."
   (interactive)
-  (unless my-whisper--recording-process-name
+  (unless pr-whisper--recording-process-name
     (user-error "Not currently recording"))
-  (interrupt-process my-whisper--recording-process-name)
-  (setq my-whisper--recording-process-name nil)
+  (interrupt-process pr-whisper--recording-process-name)
+  (setq pr-whisper--recording-process-name nil)
   (message "Audio recording stopped.")
-  (my-whisper--set-lighter-to my-whisper-lighter-when-idle)
-  (my-whisper--transcribe))
+  (pr-whisper--set-lighter-to pr-whisper-lighter-when-idle)
+  (pr-whisper--transcribe))
 
 ;;;###autoload
-(defun my-whisper-toggle-recording ()
+(defun pr-whisper-toggle-recording ()
   "Toggle recording on/off."
   (interactive)
-  (if my-whisper--recording-process-name
-      (my-whisper-stop-record)
-    (let ((model my-whisper-model)
-          (vocab-word-count (my-whisper--check-vocabulary-length)))
-      (my-whisper--validate-environment model)
-      (my-whisper--start-message model vocab-word-count)
-      (my-whisper-record-audio))))
+  (if pr-whisper--recording-process-name
+      (pr-whisper-stop-record)
+    (let ((model pr-whisper-model)
+          (vocab-word-count (pr-whisper--check-vocabulary-length)))
+      (pr-whisper--validate-environment model)
+      (pr-whisper--start-message model vocab-word-count)
+      (pr-whisper-record-audio))))
 
-(defvar my-whisper-keymap
+(defvar pr-whisper-keymap
   (let ((map (make-sparse-keymap)))
-    (define-key map my-whisper-key-for-toggle #'my-whisper-toggle-recording)
+    (define-key map pr-whisper-key-for-toggle #'pr-whisper-toggle-recording)
     map))
 
 ;;;###autoload
-(define-minor-mode my-whisper-mode
+(define-minor-mode pr-whisper-mode
   "Minor mode to transcribe speech to text.
 When activated, enables recording controls but does not start recording.
-Use \\[my-whisper-toggle-recording] to start/stop recording.
+Use \\[pr-whisper-toggle-recording] to start/stop recording.
 When recording stops, transcribed text is inserted at point.
 
-\\{my-whisper-keymap}"
-  :lighter my-whisper-lighter-when-idle
-  :keymap my-whisper-keymap
+\\{pr-whisper-keymap}"
+  :lighter pr-whisper-lighter-when-idle
+  :keymap pr-whisper-keymap
   :global t
-  (if my-whisper-mode
+  (if pr-whisper-mode
       ;; Start minor mode: set up wav file path, don't start recording yet
       (let ((wav-file (format "/tmp/whisper-recording-%s.wav" (emacs-pid))))
-        (setq my-whisper--wav-file wav-file)
-        (my-whisper--set-lighter-to my-whisper-lighter-when-idle)
-        (message "my-whisper-mode enabled. Press %s to start recording."
-                 (key-description my-whisper-key-for-toggle)))
+        (setq pr-whisper--wav-file wav-file)
+        (pr-whisper--set-lighter-to pr-whisper-lighter-when-idle)
+        (message "pr-whisper-mode enabled. Press %s to start recording."
+                 (key-description pr-whisper-key-for-toggle)))
 
     ;; Stop minor mode: stop recording if active
-    (when my-whisper--recording-process-name
-      (my-whisper-stop-record))
-    (setq my-whisper--wav-file nil)))
+    (when pr-whisper--recording-process-name
+      (pr-whisper-stop-record))
+    (setq pr-whisper--wav-file nil)))
 
 ;;;###autoload
-(defun my-whisper-transcribe-file (fname)
+(defun pr-whisper-transcribe-file (fname)
   "Transcribe a recorded audio file FNAME, insert transcribed text at point.
-This command can only be used when `my-whisper-mode is inactive."
+This command can only be used when `pr-whisper-mode is inactive."
   (interactive "fWAV file to transcribe: ")
   ;; Validate requirements first
-  (if my-whisper-mode
-      (user-error "Cannot use this command while my-whisper-mode is active!"))
+  (if pr-whisper-mode
+      (user-error "Cannot use this command while pr-whisper-mode is active!"))
   (unless (file-exists-p fname)
     (user-error "Specified file does not exist: %s" fname))
-  (my-whisper--validate-environment)
+  (pr-whisper--validate-environment)
 
   ;; All is OK, transcribe the file.
   ;; Set the name of the file
-  (setq my-whisper--wav-file fname)
-  (my-whisper--transcribe)
-  (setq my-whisper--wav-file nil))
+  (setq pr-whisper--wav-file fname)
+  (pr-whisper--transcribe)
+  (setq pr-whisper--wav-file nil))
 
 ;;;###autoload
-(defun my-whisper-insert-from-history ()
+(defun pr-whisper-insert-from-history ()
   "Insert a previous transcription from history.
 Prompts with completing-read showing transcriptions with their source buffer.
 
@@ -415,10 +416,10 @@ When a transcription is selected, it is promoted to the most recent
 position in the history ring, making it less likely to be evicted
 when the ring reaches capacity."
   (interactive)
-  (unless (and my-whisper--history-ring
-               (not (ring-empty-p my-whisper--history-ring)))
+  (unless (and pr-whisper--history-ring
+               (not (ring-empty-p pr-whisper--history-ring)))
     (user-error "No transcription history"))
-  (let* ((entries (ring-elements my-whisper--history-ring))
+  (let* ((entries (ring-elements pr-whisper--history-ring))
          (candidates (mapcar (lambda (entry)
                                (let ((text (car entry))
                                      (buf-name (cdr entry)))
@@ -432,14 +433,14 @@ when the ring reaches capacity."
          (entry (cdr (assoc choice candidates))))
     (when entry
       ;; Promote entry to most recent position (LRU behavior)
-      (let ((idx (ring-member my-whisper--history-ring entry)))
+      (let ((idx (ring-member pr-whisper--history-ring entry)))
         (when idx
-          (ring-remove my-whisper--history-ring idx)
-          (ring-insert my-whisper--history-ring entry)))
+          (ring-remove pr-whisper--history-ring idx)
+          (ring-insert pr-whisper--history-ring entry)))
       (insert (car entry) " "))))
 
 ;; ---------------------------------------------------------------------------
-(provide 'my-whisper)
+(provide 'pr-whisper)
 
 ;; Local variables:
 ;; time-stamp-format: "%Y%02m%02d.%02H%02M"
@@ -448,4 +449,4 @@ when the ring reaches capacity."
 ;; time-stamp-line-limit: 15
 ;; End:
 
-;;; my-whisper.el ends here
+;;; pr-whisper.el ends here
