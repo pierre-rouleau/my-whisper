@@ -225,7 +225,9 @@ Recording starting with %s. Editing halted. Press C-g to stop."
   "Name of wave-file used during mode execution.")
 (defvar my-whisper--history-ring nil
   "Ring of recent transcriptions.
-Each entry is a cons cell (TEXT . BUFFER-NAME).")
+Each entry is a cons cell (TEXT . BUFFER-NAME).
+Entries are promoted to most recent when re-inserted via
+`my-whisper-insert-from-history', implementing LRU-style eviction.")
 
 (defun my-whisper--set-lighter-to (lighter)
   "Update my-whisper lighter in the mode lines of all buffers to LIGHTER."
@@ -396,7 +398,11 @@ This command can only be used when `my-whisper-mode is inactive."
 ;;;###autoload
 (defun my-whisper-insert-from-history ()
   "Insert a previous transcription from history.
-Prompts with completing-read showing transcriptions with their source buffer."
+Prompts with completing-read showing transcriptions with their source buffer.
+
+When a transcription is selected, it is promoted to the most recent
+position in the history ring, making it less likely to be evicted
+when the ring reaches capacity."
   (interactive)
   (unless (and my-whisper--history-ring
                (not (ring-empty-p my-whisper--history-ring)))
@@ -405,16 +411,21 @@ Prompts with completing-read showing transcriptions with their source buffer."
          (candidates (mapcar (lambda (entry)
                                (let ((text (car entry))
                                      (buf-name (cdr entry)))
-                                 ;; Format: truncated-text (buffer-name)
+                                 ;; Format: truncated-text [buffer-name] -> entry
                                  (cons (format "%s  [%s]"
                                                (truncate-string-to-width text 60 nil nil "...")
                                                buf-name)
-                                       text)))
+                                       entry)))
                              entries))
          (choice (completing-read "Insert transcription: " candidates nil t))
-         (text (cdr (assoc choice candidates))))
-    (when text
-      (insert text " "))))
+         (entry (cdr (assoc choice candidates))))
+    (when entry
+      ;; Promote entry to most recent position (LRU behavior)
+      (let ((idx (ring-member my-whisper--history-ring entry)))
+        (when idx
+          (ring-remove my-whisper--history-ring idx)
+          (ring-insert my-whisper--history-ring entry)))
+      (insert (car entry) " "))))
 
 ;; ---------------------------------------------------------------------------
 (provide 'my-whisper)
