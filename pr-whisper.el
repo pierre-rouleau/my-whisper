@@ -314,8 +314,11 @@ shorter than `pr-whisper-history-min-length'."
     (ring-insert pr-whisper--history-ring (cons text buffer-name))))
 
 (defun pr-whisper--transcribe ()
-  "Transcribe audio previously recorded using configured backend."
-  (if (eq pr-whisper-backend 'server)
+  "Transcribe audio previously recorded.
+Uses server backend if server process is running, otherwise CLI."
+  (if (and (boundp 'pr-whisper--server-process)
+           pr-whisper--server-process
+           (process-live-p pr-whisper--server-process))
       (pr-whisper--transcribe-via-server pr-whisper--wav-file)
     (pr-whisper--transcribe-via-cli pr-whisper--wav-file)))
 
