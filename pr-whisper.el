@@ -134,6 +134,11 @@ Store the models in the directory identified by `pr-whisper-homedir'."
   (format "%s/build/bin/whisper-cli"
           (directory-file-name pr-whisper-homedir)))
 
+(defun pr-whisper--server-path ()
+  "Return path to whisper-server executable."
+  (format "%s/build/bin/whisper-server"
+          (directory-file-name pr-whisper-homedir)))
+
 (defun pr-whisper--model-path (&optional model)
   "Return the path to the whisper model file.
 If MODEL is nil, use `pr-whisper-model'."
@@ -162,6 +167,20 @@ Set to nil to disable noise filtering."
 Transcriptions shorter than this are filtered out."
   :group 'pr-whisper
   :type 'integer)
+
+(defcustom pr-whisper-backend 'cli
+  "Backend to use for transcription.
+`cli' uses whisper-cli directly (default).
+`server' uses whisper-server HTTP API (faster, ~29% speedup)."
+  :type '(choice (const :tag "CLI (whisper-cli)" cli)
+                 (const :tag "Server (HTTP API)" server))
+  :group 'pr-whisper)
+
+(defcustom pr-whisper-server-port 8178
+  "Port for whisper-server.
+Change if 8178 conflicts with another service."
+  :type 'integer
+  :group 'pr-whisper)
 
 (defcustom pr-whisper-vocabulary-file (expand-file-name
                                        (locate-user-emacs-file
@@ -204,16 +223,21 @@ Returns nil if file doesn't exist or is empty."
   "Validate current settings.
 If MODEL is nil, use `pr-whisper-model'."
   (let ((cli-path (pr-whisper--cli-path))
+        (server-path (pr-whisper--server-path))
         (model-path (pr-whisper--model-path model)))
     (unless (executable-find pr-whisper-sox)
       (user-error "The sox command is not accessible; is pr-whisper-sox valid?"))
     (unless (file-directory-p pr-whisper-homedir)
       (user-error "Invalid pr-whisper-homedir (%s)" pr-whisper-homedir))
-    (unless (file-executable-p cli-path)
-      (if (file-exists-p cli-path)
-          (user-error "Whisper-cli (%s) is not an executable file!"
-                      cli-path))
-      (user-error "Whisper-cli (%s) does not exist!" cli-path))
+    (if (eq pr-whisper-backend 'server)
+        (unless (file-executable-p server-path)
+          (if (file-exists-p server-path)
+              (user-error "Whisper-server (%s) is not an executable file!" server-path)
+            (user-error "Whisper-server (%s) does not exist!" server-path)))
+      (unless (file-executable-p cli-path)
+        (if (file-exists-p cli-path)
+            (user-error "Whisper-cli (%s) is not an executable file!" cli-path)
+          (user-error "Whisper-cli (%s) does not exist!" cli-path))))
     (unless (file-exists-p model-path)
       (user-error "Whisper model (%s) does not exist!"
                   model-path))))
@@ -241,11 +265,97 @@ Each entry is a cons cell (TEXT . BUFFER-NAME).
 Entries are promoted to most recent when re-inserted via
 `pr-whisper-insert-from-history', implementing LRU-style eviction.")
 
+(defvar pr-whisper--server-process nil
+  "Process handle for whisper-server when using server backend.")
+
 (defun pr-whisper--set-lighter-to (lighter)
   "Update pr-whisper lighter in the mode lines of all buffers to LIGHTER."
   (setcar (cdr (assq 'pr-whisper-mode minor-mode-alist)) lighter)
   ;; force update of all modelines
   (force-mode-line-update t))
+
+(defun pr-whisper--start-server ()
+  "Start whisper-server in background for transcription."
+  (when (and pr-whisper--server-process
+             (process-live-p pr-whisper--server-process))
+    (kill-process pr-whisper--server-process))
+  (setq pr-whisper--server-process
+        (start-process "whisper-server" nil
+                       (pr-whisper--server-path)
+                       "-m" (expand-file-name (pr-whisper--model-path pr-whisper-model))
+                       "--port" (number-to-string pr-whisper-server-port))))
+
+(defun pr-whisper--stop-server ()
+  "Stop whisper-server if running."
+  (when (and pr-whisper--server-process
+             (process-live-p pr-whisper--server-process))
+    (kill-process pr-whisper--server-process)
+    (setq pr-whisper--server-process nil)))
+
+(defvar url-request-method)
+
+(defun pr-whisper--server-ready-p ()
+  "Check if whisper-server is ready to accept requests."
+  (condition-case nil
+      (let ((url-request-method "GET"))
+        (with-current-buffer
+            (url-retrieve-synchronously
+             (format "http://localhost:%d/health" pr-whisper-server-port)
+             t nil 0.1)
+          (prog1 t (kill-buffer))))
+    (error nil)))
+
+(defun pr-whisper--wait-for-server (timeout)
+  "Wait up to TIMEOUT seconds for server to be ready."
+  (let ((deadline (+ (float-time) timeout)))
+    (while (and (< (float-time) deadline)
+                (not (pr-whisper--server-ready-p)))
+      (sleep-for 0.1))))
+
+(defun pr-whisper--transcribe-via-server (wav-file)
+  "Transcribe WAV-FILE using whisper-server HTTP API."
+  (let* ((marker (point-marker))
+         (original-buf (current-buffer))
+         (url (format "http://localhost:%d/inference" pr-whisper-server-port))
+         (temp-buf (generate-new-buffer " *whisper-server-output*")))
+    ;; Wait for server to be ready (should already be warm from recording time)
+    (pr-whisper--wait-for-server 5)
+    ;; Use curl for multipart form upload (url.el doesn't handle this well)
+    (make-process
+     :name "whisper-server-transcribe"
+     :buffer temp-buf
+     :command (list "curl" "-s" "-X" "POST" url
+                    "-F" (format "file=@%s" (expand-file-name wav-file))
+                    "-F" "response_format=text")
+     :sentinel
+     (lambda (proc event)
+       (when (string= event "finished\n")
+         (let ((output (with-current-buffer (process-buffer proc)
+                         (string-trim (buffer-string)))))
+           (cond
+            ((string-empty-p output)
+             (message "Whisper: No transcription output."))
+            ((pr-whisper--noise-p output)
+             (message "Whisper: Ignored noise: %s" output))
+            (t
+             ;; Add to history first, before attempting insertion
+             (pr-whisper--add-to-history output (buffer-name original-buf))
+             (when (buffer-live-p original-buf)
+               (with-current-buffer original-buf
+                 (condition-case nil
+                     (if (eq major-mode 'vterm-mode)
+                         (vterm-send-string (concat output " "))
+                       (goto-char marker)
+                       (insert output " "))
+                   (buffer-read-only
+                    (message "Whisper: Buffer is read-only, text saved to history: %s"
+                             (truncate-string-to-width output 50 nil nil "..."))))))))
+           ;; Cleanup
+           (kill-buffer temp-buf)
+           (when (file-exists-p wav-file)
+             (delete-file wav-file))
+           ;; Stop server after transcription
+           (pr-whisper--stop-server)))))))
 
 (defun pr-whisper-record-audio ()
   "Record audio, store it in the specified WAV-FILE."
@@ -264,6 +374,9 @@ Entries are promoted to most recent when re-inserted via
                    "--no-show-progress")
     (setq pr-whisper--recording-process-name record-process-name)
     (pr-whisper--set-lighter-to pr-whisper-lighter-when-recording)
+    ;; Start server during recording so it warms up while user speaks
+    (when (eq pr-whisper-backend 'server)
+      (pr-whisper--start-server))
     (message "Recording audio!")))
 
 (defun pr-whisper--noise-p (text)
@@ -286,7 +399,13 @@ shorter than `pr-whisper-history-min-length'."
     (ring-insert pr-whisper--history-ring (cons text buffer-name))))
 
 (defun pr-whisper--transcribe ()
-  "Transcribe audio previously recorded."
+  "Transcribe audio previously recorded using configured backend."
+  (if (eq pr-whisper-backend 'server)
+      (pr-whisper--transcribe-via-server pr-whisper--wav-file)
+    (pr-whisper--transcribe-via-cli)))
+
+(defun pr-whisper--transcribe-via-cli ()
+  "Transcribe audio using whisper-cli."
   (let* ((model pr-whisper-model)
          (wav-file pr-whisper--wav-file)
          (original-buf (current-buffer))
@@ -399,6 +518,8 @@ When recording stops, transcribed text is inserted at point.
     ;; Stop minor mode: stop recording if active
     (when pr-whisper--recording-process-name
       (pr-whisper-stop-record))
+    ;; Ensure server is stopped when mode is disabled
+    (pr-whisper--stop-server)
     (setq pr-whisper--wav-file nil)))
 
 ;;;###autoload
