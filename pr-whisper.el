@@ -514,7 +514,8 @@ Note: Does not use *P interactive spec since vterm buffers are read-only."
   (pr-whisper--validate-environment)
 
   ;; All is OK, transcribe the file.
-  ;; Set the name of the file
+  ;; Set insertion point and file name
+  (setq pr-whisper--insertion-marker (point-marker))
   (setq pr-whisper--wav-file fname)
   (pr-whisper--transcribe)
   (setq pr-whisper--wav-file nil))
