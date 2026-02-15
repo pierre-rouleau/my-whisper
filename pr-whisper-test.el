@@ -160,6 +160,7 @@
   (should (pr-whisper--noise-p "[silence]"))
   (should (pr-whisper--noise-p "(typing)"))
   (should (pr-whisper--noise-p "[music]"))
+  (should (pr-whisper--noise-p "[MUSIC PLAYING]"))
   (should (pr-whisper--noise-p "(applause)"))
   (should (pr-whisper--noise-p "[ Pause ]"))
   (should (pr-whisper--noise-p "[pause]"))

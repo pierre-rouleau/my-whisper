@@ -19,7 +19,6 @@
 (defvar gptel-model)
 (declare-function gptel-request "gptel")
 (declare-function pr-whisper-default-insert "pr-whisper")
-
 (defvar pr-whisper-reflow-prompt
   "Reflow this transcription into logical paragraphs. Rules:
 1. Replace spoken commands like \"new paragraph\", \"new line\" with actual line breaks
@@ -38,29 +37,38 @@ Examples: \"gemini-2.0-flash-lite\", \"qwen2.5:1.5b\" (Ollama)."
   :type 'string
   :group 'pr-whisper)
 
-(defun pr-whisper-reflow--claude-code-buffer-p (buf)
-  "Return non-nil if BUF is a claude-code buffer."
-  (and buf
-       (with-current-buffer buf (derived-mode-p 'vterm-mode))
-       (string-match-p "\\`\\*claude-code\\[" (buffer-name buf))))
+(defcustom pr-whisper-reflow-min-length 100
+  "Minimum text length in characters to trigger reflow.
+Transcriptions shorter than this are inserted directly without LLM reflow."
+  :type 'natnum
+  :group 'pr-whisper)
+
+(defun pr-whisper-reflow-default-p (text _marker)
+  "Return non-nil if TEXT is long enough for reflow."
+  (>= (length text) pr-whisper-reflow-min-length))
+
+(defcustom pr-whisper-reflow-predicate #'pr-whisper-reflow-default-p
+  "Predicate to decide whether to reflow a transcription.
+Called with TEXT and MARKER.  Return non-nil to reflow."
+  :type 'function
+  :group 'pr-whisper)
 
 (defun pr-whisper-reflow-insert (text marker)
   "Insert function for `pr-whisper-insert-function'.
 Reflows TEXT via LLM and inserts at MARKER when complete.
-Only reflows when MARKER's buffer is a claude-code buffer;
+Calls `pr-whisper-reflow-predicate' to decide whether to reflow;
 otherwise uses default insertion."
-  (let ((buf (marker-buffer marker)))
-    (if (pr-whisper-reflow--claude-code-buffer-p buf)
-        (let ((gptel-model pr-whisper-reflow-model))
-          (message "Reflowing transcription...")
-          (gptel-request
-           (format pr-whisper-reflow-prompt text)
-           :callback (lambda (response _info)
-                       (pr-whisper-default-insert
-                        (if response (string-trim response) text)
-                        marker)
-                       (message "Reflow complete."))))
-      (pr-whisper-default-insert text marker))))
+  (if (funcall pr-whisper-reflow-predicate text marker)
+      (let ((gptel-model pr-whisper-reflow-model))
+        (message "Reflowing transcription...")
+        (gptel-request
+         (format pr-whisper-reflow-prompt text)
+         :callback (lambda (response _info)
+                     (pr-whisper-default-insert
+                      (if response (string-trim response) text)
+                      marker)
+                     (message "Reflow complete."))))
+    (pr-whisper-default-insert text marker)))
 
 (provide 'pr-whisper-reflow)
 
