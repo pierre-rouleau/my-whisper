@@ -19,6 +19,7 @@
 (defvar gptel-model)
 (declare-function gptel-request "gptel")
 (declare-function pr-whisper-default-insert "pr-whisper")
+(declare-function claude-code-ide--session-buffer-p "claude-code-ide")
 
 (defvar pr-whisper-reflow-prompt
   "Reflow this transcription into logical paragraphs. Rules:
@@ -42,7 +43,7 @@ Examples: \"gemini-2.0-flash-lite\", \"qwen2.5:1.5b\" (Ollama)."
   "Return non-nil if BUF is a claude-code buffer."
   (and buf
        (with-current-buffer buf (derived-mode-p 'vterm-mode))
-       (string-match-p "\\`\\*claude-code\\[" (buffer-name buf))))
+       (claude-code-ide--session-buffer-p buf)))
 
 (defun pr-whisper-reflow-insert (text marker)
   "Insert function for `pr-whisper-insert-function'.
