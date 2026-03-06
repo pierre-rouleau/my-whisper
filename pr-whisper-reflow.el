@@ -61,15 +61,16 @@ Reflows TEXT via LLM and inserts at MARKER when complete.
 Calls `pr-whisper-reflow-predicate' to decide whether to reflow;
 otherwise uses default insertion."
   (if (funcall pr-whisper-reflow-predicate text marker)
-      (gptel-with-preset `(:model ,pr-whisper-reflow-model)
-        (message "Reflowing transcription...")
-        (gptel-request
-         (format pr-whisper-reflow-prompt text)
-         :callback (lambda (response _info)
-                     (pr-whisper-default-insert
-                      (if response (string-trim response) text)
-                      marker)
-                     (message "Reflow complete."))))
+      (let ((default-directory temporary-file-directory))
+        (gptel-with-preset `(:model ,pr-whisper-reflow-model)
+          (message "Reflowing transcription...")
+          (gptel-request
+           (format pr-whisper-reflow-prompt text)
+           :callback (lambda (response _info)
+                       (pr-whisper-default-insert
+                        (if response (string-trim response) text)
+                        marker)
+                       (message "Reflow complete.")))))
     (pr-whisper-default-insert text marker)))
 
 (provide 'pr-whisper-reflow)
