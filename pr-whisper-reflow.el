@@ -2,6 +2,7 @@
 
 ;;; Commentary:
 ;; Use gptel to reflow whisper transcriptions into logical paragraphs.
+;; Requires gptel >= 0.9.8.5 (for `gptel-with-preset').
 ;;
 ;; Why not a local model? Reflowing requires understanding enough English
 ;; context to identify sentence boundaries, topic transitions, and spoken
@@ -16,6 +17,7 @@
 
 ;;; Code:
 
+(eval-when-compile (require 'gptel))
 (defvar gptel-model)
 (declare-function gptel-request "gptel")
 (declare-function pr-whisper-default-insert "pr-whisper")
@@ -31,10 +33,17 @@ Transcription:
   "Prompt template for reflowing transcriptions.
 %s is replaced with the transcription text.")
 
-(defcustom pr-whisper-reflow-model "gemini-2.5-flash-lite"
-  "Model to use for reflow.
-Examples: \"gemini-2.0-flash-lite\", \"qwen2.5:1.5b\" (Ollama)."
+(defcustom pr-whisper-reflow-backend "Gemini"
+  "gptel backend name for reflow.
+Must match a backend registered with gptel (e.g. \"Gemini\",
+\"ChatGPT\", \"Claude\")."
   :type 'string
+  :group 'pr-whisper)
+
+(defcustom pr-whisper-reflow-model 'gemini-2.5-flash-lite
+  "Model to use for reflow.
+Must be a symbol matching a model in `pr-whisper-reflow-backend'."
+  :type 'symbol
   :group 'pr-whisper)
 
 (defcustom pr-whisper-reflow-min-length 100
@@ -59,15 +68,17 @@ Reflows TEXT via LLM and inserts at MARKER when complete.
 Calls `pr-whisper-reflow-predicate' to decide whether to reflow;
 otherwise uses default insertion."
   (if (funcall pr-whisper-reflow-predicate text marker)
-      (let ((gptel-model pr-whisper-reflow-model))
-        (message "Reflowing transcription...")
-        (gptel-request
-         (format pr-whisper-reflow-prompt text)
-         :callback (lambda (response _info)
-                     (pr-whisper-default-insert
-                      (if response (string-trim response) text)
-                      marker)
-                     (message "Reflow complete."))))
+      (let ((default-directory temporary-file-directory))
+        (gptel-with-preset `(:backend ,pr-whisper-reflow-backend
+                            :model ,pr-whisper-reflow-model)
+          (message "Reflowing transcription...")
+          (gptel-request
+           (format pr-whisper-reflow-prompt text)
+           :callback (lambda (response _info)
+                       (pr-whisper-default-insert
+                        (if response (string-trim response) text)
+                        marker)
+                       (message "Reflow complete.")))))
     (pr-whisper-default-insert text marker)))
 
 (provide 'pr-whisper-reflow)
